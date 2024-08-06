@@ -1,0 +1,27 @@
+name: Publish
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-haskell@v1
+      with:
+        ghc-version: '9.4.8'
+        cabal-version: '3.10'
+
+    - name: Build
+      run: |
+        cabal update
+        cabal build --enable-satic --project-file=cabal.project.release
+        file "$(cabal list-bin maid)" | grep "statically linked" -q
+    - name: Publish
+      run: |
+        gh release upload "$(cabal list-bin maid)#maid-$VERSION-x86_64-linux"
+      env:
+        VERSION: ${{ github.ref }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

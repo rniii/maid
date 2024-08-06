@@ -1,0 +1,4 @@
+packages:      ./
+optimization:  2
+package *
+  ghc-options: -split-sections
