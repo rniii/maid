@@ -1,0 +1,42 @@
+cabal-version:  3.0
+name:           maid-build
+version:        0.1.0
+synopsis:       Markdown-based task runner
+description:
+  Maid is a task runner like make which uses readable markdown files for its commands
+homepage:       https://github.com/rniii/maid
+bug-reports:    https://github.com/rniii/maid/issues
+license:        Apache-2.0
+license-file:   LICENSE
+author:         rini
+maintainer:     rini <rini@rinici.de>
+copyright:      (c) 2024 rini
+category:       Development
+stability:      experimental
+
+source-repository head
+  type:     git
+  location: https://github.com/rniii/maid.git
+
+common base
+  ghc-options: -Wall -Wno-name-shadowing
+  default-language: Haskell2010
+  build-depends: base >= 4.7 && <5
+
+library
+  import:         base
+  hs-source-dirs: src
+  exposed-modules:
+    Maid,
+  build-depends:
+    directory ^>= 1.3,
+    filepath ^>= 1.5,
+    typed-process ^>= 0.2.11,
+    bytestring,
+    text,
+
+executable maid
+  import:         base
+  main-is:        Main.hs
+  hs-source-dirs: app
+  build-depends:  maid-build
