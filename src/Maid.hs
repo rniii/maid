@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
-module Maid (run, module Maid.Parser) where
+module Maid (run) where
 
 import Maid.Parser (Task (..), parseTasks)
 

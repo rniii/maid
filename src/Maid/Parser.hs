@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Maid.Parser (parseTasks, Task(..)) where
+module Maid.Parser (parseTasks, Task (..), parseMarkdown, Block(..), findTaskSection) where
 
 import Control.Applicative (liftA2)
 import Data.Char (isSpace)
@@ -9,10 +9,10 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 parseTasks :: Text -> [Task]
-parseTasks = findTasks . parseMarkdown
+parseTasks = findTaskSection . parseMarkdown
 
-findTasks :: [Block] -> [Task]
-findTasks (Heading h _ : Paragraph p : rest)
+findTaskSection :: [Block] -> [Task]
+findTaskSection (Heading h _ : Paragraph p : rest)
   | ["<!--", "maid-tasks", "-->"] == T.words p =
       tasks inner
   where
@@ -23,8 +23,8 @@ findTasks (Heading h _ : Paragraph p : rest)
       Task name "" (getLang lang) code : tasks rest
     tasks (_ : rest) = tasks rest
     tasks [] = []
-findTasks (_ : rest) = findTasks rest
-findTasks [] = []
+findTaskSection (_ : rest) = findTaskSection rest
+findTaskSection [] = []
 
 getLang :: Text -> Text
 getLang t | T.all isSpace t = "sh"
