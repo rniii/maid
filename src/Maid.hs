@@ -7,7 +7,7 @@ module Maid (run) where
 import Maid.Parser (Task (..), parseTasks)
 
 import Control.Applicative (liftA2)
-import Control.Exception (SomeException, handle)
+import Control.Exception (Exception (displayException, fromException), SomeException, handle)
 import Control.Monad (forM_, unless, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
 import Control.Monad.State (StateT, execStateT, modify)
@@ -25,7 +25,7 @@ import qualified Data.Text.IO as I
 import System.Console.ANSI (hNowSupportsANSI)
 import System.Console.GetOpt (ArgDescr (NoArg), ArgOrder (Permute), OptDescr (Option), getOpt, usageInfo)
 import System.Environment (getArgs, getProgName, lookupEnv)
-import System.Exit (exitFailure, exitSuccess)
+import System.Exit (ExitCode (ExitSuccess), exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr, stdout)
 import System.IO.Error (catchIOError)
 import System.Process.Typed (byteStringInput, proc, runProcess_, setStdin)
@@ -60,10 +60,11 @@ run = handle handleError $ do
     runArgs [] = listTasks
     runArgs (task : args) = runTask (T.pack task) args
 
-    handleError e = do
-      s <- defaultStyle
-      hPutStrLn stderr (err s ++ "error: " ++ secondary s ++ show (e :: SomeException))
-      exitFailure
+    handleError e =
+      unless (fromException e == Just ExitSuccess) $ do
+        s <- defaultStyle
+        hPutStrLn stderr (err s ++ "error: " ++ secondary s ++ displayException (e :: SomeException))
+        exitFailure
 
 data Flag = Help | DryRun
 

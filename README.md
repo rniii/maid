@@ -28,6 +28,8 @@ Of course, you can use maid to run its own tasks!
 
 ### build
 
+Build the executable
+
 ``` sh
-cabal build
+cabal build maid
 ```
