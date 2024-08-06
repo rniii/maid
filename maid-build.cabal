@@ -28,12 +28,15 @@ library
   hs-source-dirs: src
   exposed-modules:
     Maid,
+    Maid.Parser,
   build-depends:
+    ansi-terminal ^>= 1.1,
     directory ^>= 1.3,
     filepath ^>= 1.5,
     typed-process ^>= 0.2.11,
     bytestring,
     text,
+    mtl,
 
 executable maid
   import:         base

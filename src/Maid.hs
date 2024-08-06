@@ -1,142 +1,171 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
-module Maid (run, parseMarkdown, Block (..)) where
+module Maid (run, module Maid.Parser) where
+
+import Maid.Parser (Task (..), parseTasks)
 
 import Control.Applicative (liftA2)
-import Control.Monad (forM_)
+import Control.Exception (SomeException, handle)
+import Control.Monad (forM_, when)
+import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
+import Control.Monad.State (execStateT, modify)
+import Data.Bool (bool)
 import qualified Data.ByteString as B
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Char (isSpace)
 import Data.List (find)
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isNothing)
+import Data.String (IsString (fromString))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import qualified Data.Text.IO as I
-import System.Directory (doesPathExist)
-import System.Environment (getArgs)
+import System.Console.ANSI (hNowSupportsANSI)
+import System.Console.GetOpt (ArgDescr (NoArg), ArgOrder (Permute), OptDescr (Option), getOpt, usageInfo)
+import System.Environment (getArgs, getProgName, lookupEnv)
+import System.Exit (exitFailure, exitSuccess)
+import System.IO (hPutStrLn, stderr, stdout)
+import System.IO.Error (catchIOError)
 import System.Process.Typed (byteStringInput, proc, runProcess_, setStdin)
 
 run :: IO ()
-run = do
-  ctx <- getContext
-  getArgs >>= \case
-    "help" : _ -> listTasks ctx
-    name : args -> runTask ctx (T.pack name) args
-    [] -> putStrLn ""
-
-runTask :: Context -> Text -> [String] -> IO ()
-runTask ctx name args = do
-  I.putStrLn $ T.strip $ tCode task
-  case lang of
-    "sh" -> runShell (B.fromStrict $ E.encodeUtf8 $ tCode task) args
-    _ -> error ("Unsupported language: " ++ T.unpack lang)
+run = handle handleError $ do
+  args <- getArgs
+  case getOpt Permute options args of
+    (opts, args, []) -> do
+      ctx <- context
+      ctx <- execStateT (mapM_ parseOpt opts) ctx
+      runReaderT (unMaid $ runArgs args) ctx
+    (_, _, err) -> error $ concat err
   where
-    task = fromMaybe (error "No such task") $ find ((. tName) (== name)) $ ctxTasks ctx
-    lang =
-      if T.all isSpace $ tLang task
-        then "sh"
-        else T.strip $ tLang task
+    options =
+      [ Option ['h'] ["help"] (NoArg Help) "Display this message"
+      , Option ['n'] ["dry-run"] (NoArg DryRun) "Only output what would be done, don't run anything"
+      ]
+
+    parseOpt Help = liftIO $ do
+      s <- defaultStyle
+      exe <- getProgName
+
+      putStrLn (primary s ++ "Usage: " ++ secondary s ++ exe ++ " [options] [task]\n")
+      putStrLn $ usageInfo (primary s ++ "Options:" ++ tertiary s) options
+      exitSuccess
+    parseOpt DryRun = modify id
+
+    context = Context defaultTaskfiles <$> defaultStyle
+
+    runArgs [] = listTasks
+    runArgs (task : args) = runTask (T.pack task) args
+
+    handleError e = do
+      s <- defaultStyle
+      hPutStrLn stderr (err s ++ "error: " ++ secondary s ++ show (e :: SomeException))
+      exitFailure
+
+data Flag = Help | DryRun
+
+newtype Maid a = Maid {unMaid :: ReaderT Context IO a}
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader Context)
+
+getTask :: Text -> [Task] -> Maybe Task
+getTask name = find ((. tName) (== name))
+
+runTask :: Text -> [String] -> Maid ()
+runTask name args = do
+  task <- fromMaybe (error "No such task") . getTask name . snd <$> (asks ctxTaskfile >>= liftIO)
+  style <- asks ctxStyle
+
+  liftIO $ do
+    putStr $ secondary style
+    I.putStr $ T.strip $ tCode task
+    putStrLn $ tertiary style
+    case tLang task of
+      "sh" -> runShell (B.fromStrict $ E.encodeUtf8 $ tCode task) args
+      _ -> error ("Unsupported language: " ++ T.unpack (tLang task))
 
 runShell :: LazyByteString -> [String] -> IO ()
 runShell input args =
-  runProcess_ (setStdin (byteStringInput input) (proc "sh" ("-seu" : "--" : args)))
+  runProcess_ $ setStdin (byteStringInput input) $ proc "sh" (["-seu", "--"] ++ args)
 
-listTasks :: Context -> IO ()
-listTasks ctx = do
-  putStrLn ("Tasks in " <> ctxFile ctx)
-  putStrLn ""
-  forM_ (ctxTasks ctx) $ \task -> do
-    I.putStrLn ("  " <> tName task)
-    I.putStrLn (T.unlines $ map ("    " <>) $ T.lines $ desc task)
+listTasks :: Maid ()
+listTasks = do
+  (file, tasks) <- asks ctxTaskfile >>= liftIO
+  style <- asks ctxStyle
+
+  liftIO $ do
+    when (null tasks) $ do
+      hPutStrLn stderr "No tasks in current path"
+      exitFailure
+
+    putStrLn (primary style ++ "Tasks in " ++ file)
+    putStrLn ""
+    forM_ tasks $ \task -> do
+      putStr $ secondary style
+      I.putStrLn ("  " <> tName task)
+      putStr $ tertiary style
+      I.putStrLn (T.unlines $ map ("    " <>) $ T.lines $ desc task)
   where
     desc task =
-      if tDesc task == T.empty
+      if T.all isSpace $ tDesc task
         then "[No description]"
-        else tDesc task
+        else T.strip $ tDesc task
 
-getContext :: IO Context
-getContext = do
-  (f, tasks) <- head . catMaybes <$> mapM getTask paths
-  return $ Context f tasks
+defaultTaskfiles :: IO (String, [Task])
+defaultTaskfiles = do
+  tasks <- catMaybes <$> mapM maybeTaskfile ["CONTRIBUTING.md", "README.md"]
+  case tasks of
+    t : _ -> return t
+    _ -> error "No taskfile"
   where
-    paths = ["CONTRIBUTING.md", "README.md"]
-    getTask f =
-      doesPathExist f >>= \e ->
-        if e
-          then do
-            tasks <- findTasks . parseMarkdown <$> I.readFile f
-            return $ Just (f, tasks)
-          else return Nothing
+    maybeTaskfile :: FilePath -> IO (Maybe (String, [Task]))
+    maybeTaskfile f =
+      read `catchIOError` const (return Nothing)
+      where
+        read = maybeTask . parseTasks <$> I.readFile f
+        maybeTask = (\x -> bool (Just x) Nothing) . (f,) <*> null
 
 data Context = Context
-  { ctxFile :: String
-  , ctxTasks :: [Task]
+  { ctxTaskfile :: IO (FilePath, [Task])
+  , ctxStyle :: Style
   }
 
-findTasks :: [Block] -> [Task]
-findTasks (Heading h _ : Paragraph p : rest)
-  | ["<!--", "maid-tasks", "-->"] == T.words p =
-      tasks inner
+defaultStyle :: IO Style
+defaultStyle = do
+  bool empty def <$> (isNothing <$> lookupEnv "NO_COLOR") .&&. hNowSupportsANSI stdout
   where
-    inner = takeWhile (\case Heading h' _ | h' <= h -> False; _ -> True) rest
-    tasks (Heading _ name : Paragraph desc : Code lang code : rest) =
-      Task name desc lang code : tasks rest
-    tasks (Heading _ name : Code lang code : rest) =
-      Task name "" lang code : tasks rest
-    tasks (_ : rest) = tasks rest
-    tasks [] = []
-findTasks (_ : rest) = findTasks rest
-findTasks [] = []
+    def = Style "95;1" "0;1" "" "31;1"
+    empty = Style (Color Nothing) (Color Nothing) (Color Nothing) (Color Nothing)
 
-data Task = Task
-  { tName :: Text
-  , tDesc :: Text
-  , tLang :: Text
-  , tCode :: Text
+primary :: Style -> String
+primary = c . sPrimary
+
+secondary :: Style -> String
+secondary = c . sSecondary
+
+tertiary :: Style -> String
+tertiary = c . sTertiary
+
+err :: Style -> String
+err = c . sErr
+
+data Style = Style
+  { sPrimary :: Color
+  , sSecondary :: Color
+  , sTertiary :: Color
+  , sErr :: Color
   }
-  deriving (Show)
 
--- | Parse markdown into headings, codeblocks and paragraphs
-parseMarkdown :: Text -> [Block]
-parseMarkdown str =
-  parseLines (T.lines str)
-  where
-    parseLines (line : rest)
-      | isBlank line = parseLines rest
-      | isHeading line = parseHeading line rest
-      | isFenced line = parseFencedCode line rest
-      | isIndented line = parseIndentedCode line rest
-      | otherwise = parseParagraph line rest
-    parseLines [] = []
+c :: Color -> String
+c (Color Nothing) = ""
+c (Color (Just a)) = "\x1b[" ++ a ++ "m"
 
-    parseHeading line rest =
-      Heading h (T.stripStart $ T.drop h line) : parseLines rest
-      where
-        h = T.length $ T.takeWhile (== '#') line
-    parseFencedCode line rest =
-      Code lang (T.unlines src) : parseLines (tail rest')
-      where
-        end = T.takeWhile (== T.head line) line
-        lang = T.drop (T.length end) line
-        (src, rest') = break (end `T.isPrefixOf`) rest
-    parseIndentedCode line rest =
-      Code "" (T.unlines $ map (T.drop 4) src) : parseLines rest'
-      where
-        (src, rest') = span (isIndented .||. isBlank) (line : rest)
-    parseParagraph line rest =
-      Paragraph (T.unlines src) : parseLines rest'
-      where
-        (src, rest') = break (isHeading .||. isFenced .||. isBlank) (line : rest)
-    isBlank = T.all isSpace
-    isHeading = ("#" `T.isPrefixOf`)
-    isIndented = ("    " `T.isPrefixOf`)
-    isFenced = ("```" `T.isPrefixOf`) .||. ("~~~" `T.isPrefixOf`)
+newtype Color = Color (Maybe String)
 
--- | Combine two predicates
-(.||.) :: Applicative f => f Bool -> f Bool -> f Bool
-(.||.) = liftA2 (||)
+instance IsString Color where
+  fromString = Color . Just
 
-data Block = Heading Int Text | Code Text Text | Paragraph Text
-  deriving (Show)
+-- | Combine two predicates with and
+(.&&.) :: Applicative f => f Bool -> f Bool -> f Bool
+(.&&.) = liftA2 (&&)
