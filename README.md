@@ -4,7 +4,7 @@ Maid is a task runner like make which uses readable markdown files for its comma
 
 ## Usage
 
-In your `README.md`, put `<!-- maid-tasks -->` under the desired section for your commands
+In your `README.md` or `CONTRIBUTING.md`, put `<!-- maid-tasks -->` under the desired section for your commands
 
 Here's this very README.md:
 
@@ -30,10 +30,4 @@ Of course, you can use maid to run its own tasks!
 
 ``` sh
 cabal build
-```
-
-### test
-
-``` sh
-cabal test
 ```

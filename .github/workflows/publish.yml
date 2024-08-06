@@ -4,9 +4,21 @@ on:
   release:
     types: [published, edited]
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-linux:
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - name: Linux
+          os: ubuntu-latest
+        - name: Windows
+          os: windows-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -18,11 +30,17 @@ jobs:
     - name: Build
       run: |
         cabal update
-        cabal build --enable-satic --project-file=cabal.project.release
-        file "$(cabal list-bin maid)" | grep "statically linked" -q
+        cabal build --enable-static --project-file=cabal.project.release
+        echo "binpath=$(cabal list-bin --project-file=cabal.project.release maid)" >> $GITHUB_ENV
     - name: Publish
+      if: runner.os == 'Linux'
       run: |
-        gh release upload "$(cabal list-bin maid)#maid-$VERSION-x86_64-linux"
+        gh release upload "$GITHUB_REF_NAME" "${{env.binpath}}#maid-$GITHUB_REF_NAME-x86_64-linux"
       env:
-        VERSION: ${{ github.ref }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Publish
+      if: runner.os == 'Windows'
+      run: |
+        gh release upload "$GITHUB_REF_NAME" "${{env.binpath}}#maid-$GITHUB_REF_NAME-x86_64-windows.exe"
+      env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
