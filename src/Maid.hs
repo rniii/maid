@@ -8,9 +8,9 @@ import Maid.Parser (Task (..), parseTasks)
 
 import Control.Applicative (liftA2)
 import Control.Exception (SomeException, handle)
-import Control.Monad (forM_, when)
+import Control.Monad (forM_, unless, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
-import Control.Monad.State (execStateT, modify)
+import Control.Monad.State (StateT, execStateT, modify)
 import Data.Bool (bool)
 import qualified Data.ByteString as B
 import Data.ByteString.Lazy (LazyByteString)
@@ -45,6 +45,7 @@ run = handle handleError $ do
       , Option ['n'] ["dry-run"] (NoArg DryRun) "Only output what would be done, don't run anything"
       ]
 
+    parseOpt :: Flag -> StateT Context IO ()
     parseOpt Help = liftIO $ do
       s <- defaultStyle
       exe <- getProgName
@@ -52,9 +53,9 @@ run = handle handleError $ do
       putStrLn (primary s ++ "Usage: " ++ secondary s ++ exe ++ " [options] [task]\n")
       putStrLn $ usageInfo (primary s ++ "Options:" ++ tertiary s) options
       exitSuccess
-    parseOpt DryRun = modify id
+    parseOpt DryRun = modify $ \c -> c{ctxDryRun = True}
 
-    context = Context defaultTaskfiles <$> defaultStyle
+    context = Context defaultTaskfiles <$> defaultStyle <*> return False
 
     runArgs [] = listTasks
     runArgs (task : args) = runTask (T.pack task) args
@@ -76,12 +77,13 @@ runTask :: Text -> [String] -> Maid ()
 runTask name args = do
   task <- fromMaybe (error "No such task") . getTask name . snd <$> (asks ctxTaskfile >>= liftIO)
   style <- asks ctxStyle
+  dry <- asks ctxDryRun
 
   liftIO $ do
     putStr $ secondary style
     I.putStr $ T.strip $ tCode task
     putStrLn $ tertiary style
-    case tLang task of
+    unless dry $ case tLang task of
       "sh" -> runShell (B.fromStrict $ E.encodeUtf8 $ tCode task) args
       _ -> error ("Unsupported language: " ++ T.unpack (tLang task))
 
@@ -129,6 +131,7 @@ defaultTaskfiles = do
 data Context = Context
   { ctxTaskfile :: IO (FilePath, [Task])
   , ctxStyle :: Style
+  , ctxDryRun :: Bool
   }
 
 defaultStyle :: IO Style
