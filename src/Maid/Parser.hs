@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Maid.Parser (parseTasks, Task (..), parseMarkdown, Block(..), findTaskSection) where
+module Maid.Parser (parseTasks, Task (..), parseMarkdown, Block (..), findTaskSection) where
 
 import Control.Applicative (liftA2)
 import Data.Char (isSpace)
@@ -14,15 +14,18 @@ parseTasks = findTaskSection . parseMarkdown
 findTaskSection :: [Block] -> [Task]
 findTaskSection (Heading h _ : Paragraph p : rest)
   | ["<!--", "maid-tasks", "-->"] == T.words p =
-      tasks inner
+      tasks $ takeWhile (\case Heading h' _ | h' <= h -> False; _ -> True) rest
   where
-    inner = takeWhile (\case Heading h' _ | h' <= h -> False; _ -> True) rest
-    tasks (Heading _ name : Paragraph desc : Code lang code : rest) =
-      Task name desc (getLang lang) code : tasks rest
-    tasks (Heading _ name : Code lang code : rest) =
-      Task name "" (getLang lang) code : tasks rest
+    tasks (Heading _ name : rest) = findDesc emptyTask{tName = name} rest
     tasks (_ : rest) = tasks rest
     tasks [] = []
+
+    findDesc task (Paragraph desc : rest) = findCode task{tDesc = desc} rest
+    findDesc task rest = findCode task rest
+
+    findCode task (Code lang code : rest) = task{tLang = getLang lang, tCode = code} : tasks rest
+    findCode task (Paragraph _ : rest) = findCode task rest
+    findCode _ rest = tasks rest
 findTaskSection (_ : rest) = findTaskSection rest
 findTaskSection [] = []
 
@@ -37,6 +40,9 @@ data Task = Task
   , tCode :: Text
   }
   deriving (Show)
+
+emptyTask :: Task
+emptyTask = Task "" "" "" ""
 
 -- | Parse markdown into headings, codeblocks and paragraphs
 parseMarkdown :: Text -> [Block]

@@ -10,25 +10,24 @@ import Control.Applicative (liftA2)
 import Control.Exception (Exception (displayException, fromException), SomeException, handle)
 import Control.Monad (forM_, unless, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
-import Control.Monad.State (StateT, execStateT, modify)
+import Control.Monad.State (StateT, execStateT, gets, modify)
 import Data.Bool (bool)
-import qualified Data.ByteString as B
-import Data.ByteString.Lazy (LazyByteString)
 import Data.Char (isSpace)
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List (find)
 import Data.Maybe (catMaybes, fromMaybe, isNothing)
 import Data.String (IsString (fromString))
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
 import qualified Data.Text.IO as I
 import System.Console.ANSI (hNowSupportsANSI)
 import System.Console.GetOpt (ArgDescr (NoArg), ArgOrder (Permute), OptDescr (Option), getOpt, usageInfo)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode (ExitSuccess), exitFailure, exitSuccess)
-import System.IO (hPutStrLn, stderr, stdout)
+import System.IO (hClose, hPutStrLn, stderr, stdout)
 import System.IO.Error (catchIOError)
-import System.Process.Typed (byteStringInput, proc, runProcess_, setStdin)
+import System.IO.Temp (withSystemTempFile)
+import System.Process.Typed (createPipe, getStdin, proc, runProcess_, setStdin, withProcessWait)
 
 run :: IO ()
 run = handle handleError $ do
@@ -42,7 +41,9 @@ run = handle handleError $ do
   where
     options =
       [ Option ['h'] ["help"] (NoArg Help) "Display this message"
-      , Option ['n'] ["dry-run"] (NoArg DryRun) "Only output what would be done, don't run anything"
+      , Option ['l'] ["list"] (NoArg List) "List tasks concisely"
+      , Option ['n'] ["dry-run"] (NoArg DryRun) "Don't run anything, only display commands"
+      , Option ['q'] ["quiet"] (NoArg Quiet) "Don't display anything"
       ]
 
     parseOpt :: Flag -> StateT Context IO ()
@@ -53,9 +54,18 @@ run = handle handleError $ do
       putStrLn (primary s ++ "Usage: " ++ secondary s ++ exe ++ " [options] [task]\n")
       putStrLn $ usageInfo (primary s ++ "Options:" ++ tertiary s) options
       exitSuccess
+    parseOpt List = do
+      tasks <- snd <$> (gets ctxTaskfile >>= liftIO)
+      liftIO $ do
+        I.putStrLn $ T.intercalate " " $ map tName tasks
+        exitSuccess
     parseOpt DryRun = modify $ \c -> c{ctxDryRun = True}
+    parseOpt Quiet = modify $ \c -> c{ctxQuiet = True}
 
-    context = Context defaultTaskfiles <$> defaultStyle <*> return False
+    context = do
+      style <- defaultStyle
+      taskfile <- cached defaultTaskfiles
+      return $ Context taskfile style False False
 
     runArgs [] = listTasks
     runArgs (task : args) = runTask (T.pack task) args
@@ -66,31 +76,63 @@ run = handle handleError $ do
         hPutStrLn stderr (err s ++ "error: " ++ secondary s ++ displayException (e :: SomeException))
         exitFailure
 
-data Flag = Help | DryRun
+data Flag = Help | List | DryRun | Quiet
 
 newtype Maid a = Maid {unMaid :: ReaderT Context IO a}
   deriving (Functor, Applicative, Monad, MonadIO, MonadReader Context)
 
-getTask :: Text -> [Task] -> Maybe Task
-getTask name = find ((. tName) (== name))
+getTask :: Text -> [Task] -> Task
+getTask name =
+  fromMaybe (error ("No such task: " ++ T.unpack name)) . find ((. tName) (== name))
 
 runTask :: Text -> [String] -> Maid ()
 runTask name args = do
-  task <- fromMaybe (error "No such task") . getTask name . snd <$> (asks ctxTaskfile >>= liftIO)
-  style <- asks ctxStyle
+  task <- getTask name . snd <$> (asks ctxTaskfile >>= liftIO)
+  runLang (tLang task) (tCode task) args
+
+runLang :: Text -> Text -> [String] -> Maid ()
+runLang lang
+  | lang `elem` ["sh", "bash"] = runShell
+  | lang `elem` ["hs", "haskell"] = runHaskell
+  | lang `elem` ["js", "javascript"] = runJavaScript
+  | otherwise = error ("Unsupported language: " ++ T.unpack lang)
+
+runShell :: Text -> [String] -> Maid ()
+runShell input args = do
   dry <- asks ctxDryRun
+  displayCommand $ T.strip input
+  unless dry $ liftIO $ withProcessWait sh $ \p -> do
+    I.hPutStr (getStdin p) input
+    hClose (getStdin p)
+  where
+    sh = setStdin createPipe $ proc "sh" ("-seu" : "--" : args)
 
-  liftIO $ do
+runHaskell :: Text -> [String] -> Maid ()
+runHaskell input args = do
+  dry <- asks ctxDryRun
+  displayCommand "runhaskell Task.hs"
+  unless dry $ liftIO $ withSystemTempFile "MaidTask.hs" $ \p h -> do
+    I.hPutStr h input
+    hClose h
+    runProcess_ $ proc "runhaskell" ("--" : "--" : p : args)
+
+runJavaScript :: Text -> [String] -> Maid ()
+runJavaScript input args = do
+  dry <- asks ctxDryRun
+  displayCommand "node task.js"
+  unless dry $ liftIO $ withSystemTempFile "maidtask.js" $ \p h -> do
+    I.hPutStr h input
+    hClose h
+    runProcess_ $ proc "node" (p : "--" : args)
+
+displayCommand :: Text -> Maid ()
+displayCommand cmd = do
+  style <- asks ctxStyle
+  quiet <- asks ctxQuiet
+  unless quiet $ liftIO $ do
     putStr $ secondary style
-    I.putStr $ T.strip $ tCode task
+    I.putStr cmd
     putStrLn $ tertiary style
-    unless dry $ case tLang task of
-      "sh" -> runShell (B.fromStrict $ E.encodeUtf8 $ tCode task) args
-      _ -> error ("Unsupported language: " ++ T.unpack (tLang task))
-
-runShell :: LazyByteString -> [String] -> IO ()
-runShell input args =
-  runProcess_ $ setStdin (byteStringInput input) $ proc "sh" (["-seu", "--"] ++ args)
 
 listTasks :: Maid ()
 listTasks = do
@@ -106,14 +148,13 @@ listTasks = do
     putStrLn ""
     forM_ tasks $ \task -> do
       putStr $ secondary style
-      I.putStrLn ("  " <> tName task)
+      I.putStrLn $ "  " <> tName task
       putStr $ tertiary style
-      I.putStrLn (T.unlines $ map ("    " <>) $ T.lines $ desc task)
+      I.putStrLn $ T.unlines $ map ("    " <>) $ T.lines $ desc task
   where
-    desc task =
-      if T.all isSpace $ tDesc task
-        then "[No description]"
-        else T.strip $ tDesc task
+    desc task
+      | T.all isSpace $ tDesc task = "[No description]"
+      | otherwise = T.strip $ tDesc task
 
 defaultTaskfiles :: IO (String, [Task])
 defaultTaskfiles = do
@@ -127,12 +168,22 @@ defaultTaskfiles = do
       read `catchIOError` const (return Nothing)
       where
         read = maybeTask . parseTasks <$> I.readFile f
-        maybeTask = (\x -> bool (Just x) Nothing) . (f,) <*> null
+        maybeTask = flip bool Nothing . Just . (f,) <*> null
+
+cached :: IO a -> IO (IO a)
+cached body = do
+  ref <- newIORef Nothing
+  return $ readIORef ref >>= maybe (cache ref) return
+  where
+    cache ref =
+      body >>= \val ->
+        writeIORef ref (Just val) >> return val
 
 data Context = Context
   { ctxTaskfile :: IO (FilePath, [Task])
   , ctxStyle :: Style
   , ctxDryRun :: Bool
+  , ctxQuiet :: Bool
   }
 
 defaultStyle :: IO Style
@@ -140,19 +191,19 @@ defaultStyle = do
   bool empty def <$> (isNothing <$> lookupEnv "NO_COLOR") .&&. hNowSupportsANSI stdout
   where
     def = Style "95;1" "0;1" "" "31;1"
-    empty = Style (Color Nothing) (Color Nothing) (Color Nothing) (Color Nothing)
+    empty = Style noColor noColor noColor noColor
 
 primary :: Style -> String
-primary = c . sPrimary
+primary = toEscape . sPrimary
 
 secondary :: Style -> String
-secondary = c . sSecondary
+secondary = toEscape . sSecondary
 
 tertiary :: Style -> String
-tertiary = c . sTertiary
+tertiary = toEscape . sTertiary
 
 err :: Style -> String
-err = c . sErr
+err = toEscape . sErr
 
 data Style = Style
   { sPrimary :: Color
@@ -161,9 +212,12 @@ data Style = Style
   , sErr :: Color
   }
 
-c :: Color -> String
-c (Color Nothing) = ""
-c (Color (Just a)) = "\x1b[" ++ a ++ "m"
+toEscape :: Color -> String
+toEscape (Color Nothing) = ""
+toEscape (Color (Just a)) = "\x1b[" ++ a ++ "m"
+
+noColor :: Color
+noColor = Color Nothing
 
 newtype Color = Color (Maybe String)
 
