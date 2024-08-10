@@ -10,6 +10,20 @@ This is a sucessor to the [original maid], keeping the same spirit of being easy
 
 [original maid]: https://github.com/egoist/maid
 
+## Install
+
+An AUR package is available as [`maid-bin`]. For other Linux systems and Windows, you can grab a
+fresh static binary from the [releases]. If you'd like to see maid packaged for another distro,
+please [open an issue]!
+
+```sh
+paru -S maid-bin
+```
+
+[`maid-bin`]: https://aur.archlinux.org/packages/maid-bin
+[releases]: https://github.com/rniii/maid/releases/latest
+[open an issue]: https://github/rniii/maid/issues/new/choose
+
 ## Usage
 
 In your `README.md` or `CONTRIBUTING.md`, add `<!-- maid-tasks -->` under the section you'd like to
