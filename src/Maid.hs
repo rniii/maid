@@ -12,7 +12,6 @@ import Control.Monad (forM_, unless, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
 import Control.Monad.State (StateT, execStateT, gets, modify)
 import Data.Bool (bool)
-import Data.Char (isSpace)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List (find)
 import Data.Maybe (catMaybes, fromMaybe, isNothing)
@@ -21,18 +20,18 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as I
 import System.Console.ANSI (hNowSupportsANSI)
-import System.Console.GetOpt (ArgDescr (NoArg), ArgOrder (Permute), OptDescr (Option), getOpt, usageInfo)
+import System.Console.GetOpt (ArgDescr (NoArg), ArgOrder (RequireOrder), OptDescr (Option), getOpt, usageInfo)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode (ExitSuccess), exitFailure, exitSuccess)
 import System.IO (hClose, hPutStrLn, stderr, stdout)
 import System.IO.Error (catchIOError)
 import System.IO.Temp (withSystemTempFile)
-import System.Process.Typed (createPipe, getStdin, proc, runProcess_, setStdin, withProcessWait)
+import System.Process.Typed (proc, runProcess_)
 
 run :: IO ()
 run = handle handleError $ do
   args <- getArgs
-  case getOpt Permute options args of
+  case getOpt RequireOrder options args of
     (opts, args, []) -> do
       ctx <- context
       ctx <- execStateT (mapM_ parseOpt opts) ctx
@@ -57,7 +56,8 @@ run = handle handleError $ do
     parseOpt List = do
       tasks <- snd <$> (gets ctxTaskfile >>= liftIO)
       liftIO $ do
-        I.putStrLn $ T.intercalate " " $ map tName tasks
+        forM_ tasks $ \task -> do
+          I.putStrLn (tName task <> " " <> tDesc task)
         exitSuccess
     parseOpt DryRun = modify $ \c -> c{ctxDryRun = True}
     parseOpt Quiet = modify $ \c -> c{ctxQuiet = True}
@@ -88,6 +88,7 @@ getTask name =
 runTask :: Text -> [String] -> Maid ()
 runTask name args = do
   task <- getTask name . snd <$> (asks ctxTaskfile >>= liftIO)
+  displayCommand ("maid " <> name)
   runLang (tLang task) (tCode task) args
 
 runLang :: Text -> Text -> [String] -> Maid ()
@@ -100,12 +101,10 @@ runLang lang
 runShell :: Text -> [String] -> Maid ()
 runShell input args = do
   dry <- asks ctxDryRun
-  displayCommand $ T.strip input
-  unless dry $ liftIO $ withProcessWait sh $ \p -> do
-    I.hPutStr (getStdin p) input
-    hClose (getStdin p)
-  where
-    sh = setStdin createPipe $ proc "sh" ("-seu" : "--" : args)
+  unless dry $ liftIO $ withSystemTempFile "maidtask.sh" $ \p h -> do
+    I.hPutStr h input
+    hClose h
+    runProcess_ $ proc "sh" ("-euv" : p : "--" : args)
 
 runHaskell :: Text -> [String] -> Maid ()
 runHaskell input args = do
@@ -150,11 +149,7 @@ listTasks = do
       putStr $ secondary style
       I.putStrLn $ "  " <> tName task
       putStr $ tertiary style
-      I.putStrLn $ T.unlines $ map ("    " <>) $ T.lines $ desc task
-  where
-    desc task
-      | T.all isSpace $ tDesc task = "[No description]"
-      | otherwise = T.strip $ tDesc task
+      I.putStrLn $ T.unlines $ map ("    " <>) $ T.lines $ tDesc task
 
 defaultTaskfiles :: IO (String, [Task])
 defaultTaskfiles = do

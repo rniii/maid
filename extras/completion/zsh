@@ -1,0 +1,22 @@
+#compdef maid
+
+_maid_tasks() {
+  local -a tasks
+  tasks=("${(@f)$(maid -l 2>/dev/null | sed 's/ \(.\)/:\L\1/')}")
+
+  if (($? == 0)) {
+    _describe 'task' tasks
+  } else {
+    _message 'task (none found)'
+  }
+}
+
+_maid() {
+  _arguments \
+    "(-l --list)"{-l,--list}"[list available tasks concisely]" \
+    "(-n --dry-run)"{-n,--dry-run}"[don't run anything, only display commands]" \
+    "(-q --quiet)"{-q,--quiet}"[don't display anything]" \
+    ':task:_maid_tasks'
+}
+
+_maid "$@"

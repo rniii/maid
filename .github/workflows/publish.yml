@@ -33,18 +33,23 @@ jobs:
 
     - name: Build
       run: |
+        cp cabal.project.{release,local}
         cabal update
-        cabal build --enable-static --project-file=cabal.project.release
-        echo "binpath=$(cabal list-bin --project-file=cabal.project.release maid)" >> $GITHUB_ENV
+        cabal build --enable-static
+        echo "binpath=$(cabal list-bin maid)" >> $GITHUB_ENV
     - name: Publish
       if: runner.os == 'Linux'
       run: |
-        gh release upload "$GITHUB_REF_NAME" "${{env.binpath}}#maid-$GITHUB_REF_NAME-x86_64-linux"
+        pkg=maid-$("$binpath" version -q)
+        "$binpath" package
+        gh release upload "$GITHUB_REF_NAME" "$pkg.tar.gz"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Publish
       if: runner.os == 'Windows'
       run: |
-        gh release upload "$GITHUB_REF_NAME" "${{env.binpath}}#maid-$GITHUB_REF_NAME-x86_64-windows.exe"
+        exe=maid-$("$binpath" version -q).exe
+        cp "$binpath" "$exe"
+        gh release upload "$GITHUB_REF_NAME" "$exe"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
