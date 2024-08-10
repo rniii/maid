@@ -65,15 +65,6 @@ Build the executable
 cabal build maid
 ```
 
-### package
-
-Create a tarball `$pkg`
-
-```sh
-dstdir=$pkg maid install
-tar --remove-files -cf "$pkg.tar.gz" "$pkg"
-```
-
 ### install
 
 Install project onto `$dstdir`

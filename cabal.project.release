@@ -1,5 +1,0 @@
-optimization:         2
-executable-stripping: True
-
-package *
-  ghc-options: -split-sections
