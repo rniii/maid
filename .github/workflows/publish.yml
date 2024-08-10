@@ -40,15 +40,17 @@ jobs:
     - name: Publish
       if: runner.os == 'Linux'
       run: |
-        pkg=maid-$("$binpath" version -q)
-        "$binpath" package
+        pkg=maid-$("$binpath" -q version)
+        dstdir=$pkg "$binpath" install
+        tar --remove-files -cf "$pkg.tar.gz" "$pkg"
+
         gh release upload "$GITHUB_REF_NAME" "$pkg.tar.gz"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Publish
       if: runner.os == 'Windows'
       run: |
-        exe=maid-$("$binpath" version -q).exe
+        exe=maid-$("$binpath" -q version).exe
         cp "$binpath" "$exe"
         gh release upload "$GITHUB_REF_NAME" "$exe"
       env:
