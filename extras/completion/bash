@@ -1,0 +1,11 @@
+_maid() {
+  if [[ "$2" == -* ]]; then
+    COMPREPLY=( $(compgen -W "-h -l -n -q --help --list --dry-run --quiet" -- "$2") )
+  else
+    COMPREPLY=( $(compgen -W "$(maid -l | cut -d ' ' -f 1)" -- "$2") )
+  fi
+}
+
+complete -F _maid -o nosort -o default maid
+
+# vim: ft=bash

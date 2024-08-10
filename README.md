@@ -54,7 +54,7 @@ cabal build maid
 Create a tarball `$pkg`
 
 ```sh
-dstdir="$pkg" maid install
+dstdir=$pkg maid install
 tar --remove-files -cf "$pkg.tar.gz" "$pkg"
 ```
 
@@ -66,6 +66,8 @@ Install project onto `$dstdir`
 install -Dm755 "$(cabal list-bin maid)" "$dstdir/bin/maid"
 install -Dm644 LICENSE -t "$dstdir/share/licenses/maid"
 install -Dm644 extras/completion/zsh "$dstdir/share/zsh/site-functions/_maid"
+install -Dm644 extras/completion/fish "$dstdir/share/fish/vendor_completions.d/maid.fish"
+install -Dm644 extras/completion/bash "$dstdir/share/bash-completion/completions/maid"
 ln -s maid "$dstdir/bin/made"
 ```
 
