@@ -91,40 +91,34 @@ runTask :: Text -> [String] -> Maid ()
 runTask name args = do
   task <- getTask name . snd <$> (asks ctxTaskfile >>= liftIO)
   displayCommand ("maid " <> name)
-  runLang (tLang task) (tCode task) args
+  runLang (tLang task) args (tCode task)
 
-runLang :: Text -> Text -> [String] -> Maid ()
+runLang :: Text -> [String] -> Text -> Maid ()
 runLang lang
   | lang `elem` ["sh", "bash"] = runShell
   | lang `elem` ["hs", "haskell"] = runHaskell
   | lang `elem` ["js", "javascript"] = runJavaScript
   | otherwise = error ("Unsupported language: " ++ T.unpack lang)
 
-runShell :: Text -> [String] -> Maid ()
-runShell input args = do
-  dry <- asks ctxDryRun
-  unless dry $ liftIO $ withSystemTempFile "maidtask.sh" $ \p h -> do
-    I.hPutStr h input
-    hClose h
-    runProcess_ $ proc "sh" ("-euv" : p : "--" : args)
+runShell :: [String] -> Text -> Maid ()
+runShell args =
+  runProc "sh" "maidtask.sh" (: "-euv" : "--" : args)
 
-runHaskell :: Text -> [String] -> Maid ()
-runHaskell input args = do
-  dry <- asks ctxDryRun
-  displayCommand "runhaskell Task.hs"
-  unless dry $ liftIO $ withSystemTempFile "MaidTask.hs" $ \p h -> do
-    I.hPutStr h input
-    hClose h
-    runProcess_ $ proc "runhaskell" ("--" : "--" : p : args)
+runHaskell :: [String] -> Text -> Maid ()
+runHaskell args =
+  runProc "runhaskell" "MaidTask.hs" (: "--" : "-W" : "--" : args)
 
-runJavaScript :: Text -> [String] -> Maid ()
-runJavaScript input args = do
+runJavaScript :: [String] -> Text -> Maid ()
+runJavaScript args =
+  runProc "node" "maidtask.js" (: "--" : args)
+
+runProc :: String -> String -> (String -> [String]) -> Text -> Maid ()
+runProc cmd file args input = do
   dry <- asks ctxDryRun
-  displayCommand "node task.js"
-  unless dry $ liftIO $ withSystemTempFile "maidtask.js" $ \p h -> do
+  unless dry $ liftIO $ withSystemTempFile file $ \p h -> do
     I.hPutStr h input
     hClose h
-    runProcess_ $ proc "node" (p : "--" : args)
+    runProcess_ $ proc cmd $ args p
 
 displayCommand :: Text -> Maid ()
 displayCommand cmd = do

@@ -16,15 +16,20 @@ findTaskSection (Heading h _ : Paragraph p : rest)
   | ["<!--", "maid-tasks", "-->"] == T.words p =
       tasks $ takeWhile (\case Heading h' _ | h' <= h -> False; _ -> True) rest
   where
-    tasks (Heading _ name : rest) = findDesc emptyTask{tName = name} rest
+    tasks (Heading _ name : rest) =
+      findDesc emptyTask{tName = T.toLower name} rest
     tasks (_ : rest) = tasks rest
     tasks [] = []
 
-    findDesc task (Paragraph desc : rest) = findCode task{tDesc = desc} rest
-    findDesc task rest = findCode task rest
+    findDesc task (Paragraph desc : rest) =
+      findCode task{tDesc = T.strip desc} rest
+    findDesc task rest =
+      findCode task{tDesc = "[No description]"} rest
 
-    findCode task (Code lang code : rest) = task{tLang = getLang lang, tCode = code} : tasks rest
-    findCode task (Paragraph _ : rest) = findCode task rest
+    findCode task (Code lang code : rest) =
+      task{tLang = getLang lang, tCode = code} : tasks rest
+    findCode task (Paragraph _ : rest) =
+      findCode task rest
     findCode _ rest = tasks rest
 findTaskSection (_ : rest) = findTaskSection rest
 findTaskSection [] = []

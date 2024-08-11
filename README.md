@@ -105,5 +105,5 @@ import qualified Data.Text.IO as I
 
 main = I.readFile "maid-build.cabal"
   >>= (I.putStrLn . T.strip)
-    . (head . catMaybes . map (T.stripPrefix $ T.pack "version:") . T.lines)
+    . (head . mapMaybe (T.stripPrefix $ T.pack "version:") . T.lines)
 ```
