@@ -21,8 +21,10 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as I
 import System.Console.ANSI (hNowSupportsANSI)
 import System.Console.GetOpt (ArgDescr (NoArg), ArgOrder (RequireOrder), OptDescr (Option), getOpt, usageInfo)
+import System.Directory (getCurrentDirectory)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode (ExitSuccess), exitFailure, exitSuccess)
+import System.FilePath (combine, isDrive, takeDirectory, takeFileName)
 import System.IO (hClose, hPutStrLn, stderr, stdout)
 import System.IO.Error (catchIOError)
 import System.IO.Temp (withSystemTempFile)
@@ -143,7 +145,7 @@ listTasks = do
       hPutStrLn stderr "No tasks in current path"
       exitFailure
 
-    putStrLn (primary style ++ "Tasks in " ++ file)
+    putStrLn (primary style ++ "Tasks in " ++ takeFileName file)
     putStrLn ""
     forM_ tasks $ \task -> do
       putStr $ secondary style
@@ -153,11 +155,16 @@ listTasks = do
 
 defaultTaskfiles :: IO (String, [Task])
 defaultTaskfiles = do
-  tasks <- catMaybes <$> mapM maybeTaskfile ["CONTRIBUTING.md", "README.md"]
+  files <- files <$> getCurrentDirectory
+  tasks <- catMaybes <$> mapM maybeTaskfile files
   case tasks of
     t : _ -> return t
     _ -> error "No taskfile"
   where
+    files =
+      concatMap ((`map` ["README.md", "CONTRIBUTING.md"]) . combine)
+        . takeWhile (not . isDrive)
+        . iterate takeDirectory
     maybeTaskfile :: FilePath -> IO (Maybe (String, [Task]))
     maybeTaskfile f =
       read `catchIOError` const (return Nothing)
