@@ -1,7 +1,7 @@
 _maid() {
   case "$2","$3" in
     -*,*)
-      COMPREPLY=( $(compgen -W "-h -l -n -q -f --help --list --dry-run --quiet --maidfile" -- "$2") )
+      COMPREPLY=( $(compgen -W "-h -l -n -q -f --help --list --dry-run --quiet --taskfile" -- "$2") )
       ;;
     *,-f | *,--maidfile)
       COMPREPLY=( $(compgen -f -- "$2") )

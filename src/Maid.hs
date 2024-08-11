@@ -46,7 +46,7 @@ run = do
       , Option ['l'] ["list"] (NoArg List) "List tasks concisely"
       , Option ['n'] ["dry-run"] (NoArg DryRun) "Don't run anything, only display commands"
       , Option ['q'] ["quiet"] (NoArg Quiet) "Don't display anything"
-      , Option ['f'] ["maidfile"] (ReqArg Maidfile "FILE") "Use tasks in FILE"
+      , Option ['f'] ["taskfile"] (ReqArg Maidfile "FILE") "Use tasks in FILE"
       ]
 
     parseOpt :: Flag -> StateT Context IO ()

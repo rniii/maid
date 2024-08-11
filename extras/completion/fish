@@ -4,6 +4,6 @@ complete -c maid -s h -l help -d "display usage"
 complete -c maid -s l -l list -d "list tasks concisely"
 complete -c maid -s n -l dry-run -d "don't run anything, only display commands"
 complete -c maid -s q -l quiet -d "don't display anything"
-complete -c maid -s f -l maidfile -d "use tasks in file"
+complete -c maid -s f -l taskfile -d "use tasks in file"
 
 # vim: ft=fish
