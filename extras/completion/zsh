@@ -13,11 +13,13 @@ _maid_tasks() {
 
 _maid() {
   _arguments \
-    "(-h --help)"{-h,--help}"[display usage]" \
-    "(-l --list)"{-l,--list}"[list available tasks concisely]" \
-    "(-n --dry-run)"{-n,--dry-run}"[don't run anything, only display commands]" \
-    "(-q --quiet)"{-q,--quiet}"[don't display anything]" \
-    ':task:_maid_tasks'
+    "(help)"{-h,--help}"[display usage]" \
+    "(list)"{-l,--list}"[list available tasks concisely]" \
+    "(dry-run)"{-n,--dry-run}"[don't run anything, only display commands]" \
+    "(quiet)"{-q,--quiet}"[don't display anything]" \
+    "(maidfile)"{-f,--maidfile=}"[use tasks in file]:maidfile:_files" \
+    ":task:_maid_tasks" \
+    "*:args:_default"
 }
 
 _maid "$@"

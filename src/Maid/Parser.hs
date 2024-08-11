@@ -69,8 +69,7 @@ parseMarkdown str =
     parseFencedCode line rest =
       Code lang (T.unlines src) : parseLines (tail rest')
       where
-        end = T.takeWhile (== T.head line) line
-        lang = T.drop (T.length end) line
+        (end, lang) = T.span (== T.head line) line
         (src, rest') = break (end `T.isPrefixOf`) rest
     parseIndentedCode line rest =
       Code "" (T.unlines $ map (T.drop 4) src) : parseLines rest'
