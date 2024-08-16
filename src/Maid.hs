@@ -7,8 +7,9 @@ module Maid (run, MaidError) where
 import Maid.Parser (Task (..), parseTasks)
 
 import Control.Applicative (liftA2)
+import Control.Concurrent (forkIO, newMVar, putMVar, threadDelay, tryTakeMVar)
 import Control.Exception (Exception, handle, throw)
-import Control.Monad (forM_, unless, when)
+import Control.Monad (forM_, forever, unless, void, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
 import Control.Monad.State (StateT, execStateT, gets, modify)
 import Data.Bool (bool)
@@ -23,6 +24,7 @@ import System.Console.GetOpt (ArgDescr (NoArg, ReqArg), ArgOrder (RequireOrder),
 import System.Directory (getCurrentDirectory)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode (ExitFailure), exitFailure, exitSuccess, exitWith)
+import System.FSNotify (watchDir, withManager)
 import System.FilePath (combine, isDrive, takeDirectory, takeFileName)
 import System.IO (hClose, hPutStrLn, stderr, stdout)
 import System.IO.Error (catchIOError)
@@ -47,6 +49,7 @@ run = do
       , Option ['n'] ["dry-run"] (NoArg DryRun) "Don't run anything, only display commands"
       , Option ['q'] ["quiet"] (NoArg Quiet) "Don't display anything"
       , Option ['f'] ["taskfile"] (ReqArg Maidfile "FILE") "Use tasks in FILE"
+      , Option ['w'] ["watch"] (ReqArg Watch "PATH") "Watch files in PATH"
       ]
 
     parseOpt :: Flag -> StateT Context IO ()
@@ -70,8 +73,9 @@ run = do
       when (null tasks) $ throw $ NoTasks file
 
       modify $ \c -> c{ctxTaskfile = (file, tasks)}
+    parseOpt (Watch dir) = modify $ \c -> c{ctxWatch = dir : ctxWatch c}
 
-    context = Context ([], []) False False <$> defaultStyle
+    context = Context ([], []) False False [] <$> defaultStyle
 
     setTaskfile ctx = case ctxTaskfile ctx of
       ([], []) -> do
@@ -84,7 +88,13 @@ run = do
     runArgs (task : args) = runTask (T.pack task) args
     runArgs [] = listTasks
 
-data Flag = Help | List | DryRun | Quiet | Maidfile String
+data Flag
+  = Help
+  | List
+  | DryRun
+  | Quiet
+  | Maidfile String
+  | Watch String
 
 putErr :: String -> IO ()
 putErr msg = do
@@ -98,7 +108,23 @@ getTask name =
 runTask :: Text -> [String] -> Maid ()
 runTask name args = do
   task <- asks (getTask name . snd . ctxTaskfile)
-  displayCommand ("maid " <> name)
+  watch <- asks ctxWatch
+  runTask' task args
+
+  unless (null watch) $ do
+    lock <- liftIO $ newMVar ()
+    exec <- asks $ runReaderT $ unMaid (runTask' task args)
+    liftIO $ do
+      withManager $ \mgr -> do
+        forM_ watch $ \path -> watchDir mgr path (const True) $ \_ ->
+          void $ forkIO $ do
+            ok <- isNothing <$> tryTakeMVar lock
+            unless ok $ exec >> putMVar lock ()
+        forever (threadDelay maxBound)
+
+runTask' :: Task -> [String] -> Maid ()
+runTask' task args = do
+  displayCommand ("maid " <> tName task)
   runLang (tLang task) args (tCode task)
 
 runLang :: Text -> [String] -> Text -> Maid ()
@@ -181,6 +207,7 @@ data Context = Context
   { ctxTaskfile :: (FilePath, [Task])
   , ctxDryRun :: Bool
   , ctxQuiet :: Bool
+  , ctxWatch :: [FilePath]
   , ctxStyle :: Style
   }
 
