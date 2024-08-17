@@ -2,7 +2,7 @@ name: Publish
 on:
   workflow_dispatch:
   release:
-    types: [published, edited]
+    types: [published]
 
 permissions:
   contents: write
@@ -26,10 +26,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - uses: haskell-actions/setup@v2
+      with:
+        ghc-version: "9.4.8"
+        cabal-version: "3.10.3.0"
     - name: Install dependencies
       if: runner.os == 'Windows'
       run: |
-        scoop install main/upx
+        choco install upx
     - name: Build
       run: |
         cabal update
