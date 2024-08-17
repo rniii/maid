@@ -63,9 +63,9 @@ parseMarkdown str =
     parseLines [] = []
 
     parseHeading line rest =
-      Heading h (T.stripStart $ T.drop h line) : parseLines rest
+      Heading (T.length hashes) (T.stripStart line') : parseLines rest
       where
-        h = T.length $ T.takeWhile (== '#') line
+        (hashes, line') = T.span (== '#') line
     parseFencedCode line rest =
       Code lang (T.unlines src) : parseLines (tail rest')
       where

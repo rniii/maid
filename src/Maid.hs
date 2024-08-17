@@ -10,7 +10,7 @@ import Control.Applicative (liftA2)
 import Control.Exception (Exception, handle, throw)
 import Control.Monad (forM_, unless, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
-import Control.Monad.State (StateT, execStateT, gets, modify)
+import Control.Monad.State (MonadState (get), StateT, execStateT, modify)
 import Data.Bool (bool)
 import Data.List (dropWhileEnd, find)
 import Data.Maybe (catMaybes, fromMaybe, isNothing)
@@ -57,9 +57,9 @@ run = do
       putStrLn (primary s ++ "Usage: " ++ secondary s ++ exe ++ " [options] [task]\n")
       putStrLn $ usageInfo (primary s ++ "Options:" ++ tertiary s) options
       exitSuccess
-    parseOpt List = do
-      tasks <- gets (snd . ctxTaskfile)
-      liftIO $ do
+    parseOpt List =
+      get >>= \ctx -> liftIO $ do
+        tasks <- snd . ctxTaskfile <$> setTaskfile ctx
         forM_ tasks $ \task -> do
           I.putStrLn (tName task <> " " <> tDesc task)
         exitSuccess
