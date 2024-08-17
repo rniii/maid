@@ -26,22 +26,25 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: haskell-actions/setup@v2
-      with:
-        ghc-version: '9.4.8'
-        cabal-version: '3.10'
-
+    - name: Install dependencies
+      if: runner.os == 'Windows'
+      run: |
+        scoop install main/upx
     - name: Build
       run: |
         cabal update
-        cabal configure --enable-optimization=2 --enable-executable-static --enable-executable-stripping
-        cabal build --enable-static
+        cabal configure \
+          --enable-optimization=2 \
+          --enable-static --enable-executable-static \
+          --enable-executable-stripping
+        cabal build
         echo "binpath=$(cabal list-bin maid)" >> $GITHUB_ENV
     - name: Publish
       if: runner.os == 'Linux'
       run: |
         pkg=maid-$("$binpath" -q version)
         dstdir=$pkg "$binpath" install
+        strip "$pkg/bin/maid"
         tar --remove-files -cf "$pkg.tar.gz" "$pkg"
 
         gh release upload "$GITHUB_REF_NAME" "$pkg.tar.gz"
@@ -52,6 +55,7 @@ jobs:
       run: |
         exe=maid-$("$binpath" -q version).exe
         cp "$binpath" "$exe"
+        strip "$exe" && upx "$exe"
         gh release upload "$GITHUB_REF_NAME" "$exe"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
