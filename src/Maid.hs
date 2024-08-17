@@ -7,7 +7,7 @@ module Maid (run, MaidError) where
 import Maid.Parser (Task (..), parseTasks)
 
 import Control.Applicative (liftA2)
-import Control.Concurrent (forkIO, newMVar, putMVar, threadDelay, tryTakeMVar)
+import Control.Concurrent (forkIO, killThread, newEmptyMVar, newMVar, putMVar, swapMVar, takeMVar, threadDelay, tryTakeMVar)
 import Control.Exception (Exception, handle, throw)
 import Control.Monad (forM_, forever, unless, void, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader, ReaderT (runReaderT), asks)
@@ -24,7 +24,7 @@ import System.Console.GetOpt (ArgDescr (NoArg, ReqArg), ArgOrder (RequireOrder),
 import System.Directory (getCurrentDirectory)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode (ExitFailure), exitFailure, exitSuccess, exitWith)
-import System.FSNotify (watchDir, withManager)
+import System.FSNotify (watchTree, withManager)
 import System.FilePath (combine, isDrive, takeDirectory, takeFileName)
 import System.IO (hClose, hPutStrLn, stderr, stdout)
 import System.IO.Error (catchIOError)
@@ -49,7 +49,8 @@ run = do
       , Option ['n'] ["dry-run"] (NoArg DryRun) "Don't run anything, only display commands"
       , Option ['q'] ["quiet"] (NoArg Quiet) "Don't display anything"
       , Option ['f'] ["taskfile"] (ReqArg Maidfile "FILE") "Use tasks in FILE"
-      , Option ['w'] ["watch"] (ReqArg Watch "PATH") "Watch files in PATH"
+      , Option ['w'] ["watch"] (ReqArg Watch "PATH") "Watch files in PATH. Can be specified multiple times"
+      , Option ['r'] ["restart"] (NoArg Restart) "When files change, restart the task instead of waiting"
       ]
 
     parseOpt :: Flag -> StateT Context IO ()
@@ -74,8 +75,18 @@ run = do
 
       modify $ \c -> c{ctxTaskfile = (file, tasks)}
     parseOpt (Watch dir) = modify $ \c -> c{ctxWatch = dir : ctxWatch c}
+    parseOpt Restart = modify $ \c -> c{ctxWatchRestart = True}
 
-    context = Context ([], []) False False [] <$> defaultStyle
+    context =
+      (`fmap` defaultStyle) $ \style ->
+        Context
+          { ctxTaskfile = ([], [])
+          , ctxDryRun = False
+          , ctxQuiet = False
+          , ctxWatch = []
+          , ctxWatchRestart = False
+          , ctxStyle = style
+          }
 
     setTaskfile ctx = case ctxTaskfile ctx of
       ([], []) -> do
@@ -85,7 +96,7 @@ run = do
 
     bail e = putErr e >> exitFailure
 
-    runArgs (task : args) = runTask (T.pack task) args
+    runArgs (task : args) = execTask (T.pack task) args
     runArgs [] = listTasks
 
 data Flag
@@ -95,6 +106,7 @@ data Flag
   | Quiet
   | Maidfile String
   | Watch String
+  | Restart
 
 putErr :: String -> IO ()
 putErr msg = do
@@ -105,25 +117,42 @@ getTask :: Text -> [Task] -> Task
 getTask name =
   fromMaybe (throw $ UnknownTask $ T.unpack name) . find ((. tName) (== name))
 
-runTask :: Text -> [String] -> Maid ()
-runTask name args = do
+execTask :: Text -> [String] -> Maid ()
+execTask name args = do
   task <- asks (getTask name . snd . ctxTaskfile)
   watch <- asks ctxWatch
-  runTask' task args
+  watchTask watch task args
 
-  unless (null watch) $ do
-    lock <- liftIO $ newMVar ()
-    exec <- asks $ runReaderT $ unMaid (runTask' task args)
-    liftIO $ do
-      withManager $ \mgr -> do
-        forM_ watch $ \path -> watchDir mgr path (const True) $ \_ ->
-          void $ forkIO $ do
-            ok <- isNothing <$> tryTakeMVar lock
-            unless ok $ exec >> putMVar lock ()
-        forever (threadDelay maxBound)
+watchTask :: [FilePath] -> Task -> [String] -> Maid ()
+watchTask [] task args = do
+  runTask task args
+watchTask paths task args = do
+  restart <- asks ctxWatchRestart
+  exec <- asks $ runReaderT $ unMaid $ runTask task args
+  liftIO $ withManager $ \mgr -> do
+    action <- bool watchWait watchRestart restart exec
+    forM_ paths $ \path ->
+      watchTree mgr path (const True) (const action)
+    forever (threadDelay maxBound)
+  where
+    watchWait exec = do
+      void exec
+      lock <- newMVar ()
+      return $ void $ forkIO $ do
+        blocked <- isNothing <$> tryTakeMVar lock
+        unless blocked (exec >> putMVar lock ())
+    watchRestart exec = do
+      active <- forkIO exec >>= newMVar
+      -- debounced child thread, makes infinite loops less overwhelming
+      lock <- newEmptyMVar
+      void $ forkIO $ forever $ do
+        takeMVar lock
+        killThread =<< swapMVar active =<< forkIO exec
+        threadDelay (300 * 1000)
+      return $ putMVar lock ()
 
-runTask' :: Task -> [String] -> Maid ()
-runTask' task args = do
+runTask :: Task -> [String] -> Maid ()
+runTask task args = do
   displayCommand ("maid " <> tName task)
   runLang (tLang task) args (tCode task)
 
@@ -208,6 +237,7 @@ data Context = Context
   , ctxDryRun :: Bool
   , ctxQuiet :: Bool
   , ctxWatch :: [FilePath]
+  , ctxWatchRestart :: Bool
   , ctxStyle :: Style
   }
 

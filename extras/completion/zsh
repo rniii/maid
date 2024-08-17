@@ -18,6 +18,8 @@ _maid() {
     "(dry-run)"{-n,--dry-run}"[don't run anything, only display commands]" \
     "(quiet)"{-q,--quiet}"[don't display anything]" \
     "(taskfile)"{-f,--taskfile=}"[use tasks in file]:maidfile:_files" \
+    "(watch)"{-w,--watch=}"[watch tasks in path]:watch:_files" \
+    "(restart)"{-r,--restart}"[restart tasks instead of waiting]" \
     ":task:_maid_tasks" \
     "*:args:_default"
 }
