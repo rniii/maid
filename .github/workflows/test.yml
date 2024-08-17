@@ -44,11 +44,11 @@ jobs:
     - name: Check binary size
       run: |
         cp "$binpath" maid
+        strip maid -o maid-s
+        upx maid-s -o maid-u
         echo "No strip, no compression"
-        du -hs "$binpath"
+        du -hs maid
         echo "Stripped, no compression"
-        strip "$binpath"
-        du -hs "$binpath"
+        du -hs maid-s
         echo "Stripped, compressed"
-        upx "$binpath"
-        du -hs "$binpath"
+        du -hs maid-u

@@ -1,4 +1,4 @@
 packages: ./
 
 package *
-  ghc-options: -split-sections
+  ghc-options: -split-sections -funfolding-use-threshold=0 -fno-specialize
