@@ -1,0 +1,54 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-linux:
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - name: Linux
+          os: ubuntu-latest
+        - name: Windows
+          os: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: haskell-actions/setup@v2
+      with:
+        ghc-version: "9.4.8"
+        cabal-version: "3.10.3.0"
+    - name: Install dependencies
+      if: runner.os == 'Windows'
+      run: |
+        choco install upx
+    - name: Build
+      run: |
+        cabal update
+        cabal configure \
+          --enable-optimization=2 \
+          --enable-static --enable-executable-static \
+          --enable-executable-stripping
+        cabal build
+        echo "binpath=$(cabal list-bin maid)" >> $GITHUB_ENV
+    - name: Check binary size
+      run: |
+        cp "$binpath" maid
+        echo "No strip, no compression"
+        du -hs "$binpath"
+        echo "Stripped, no compression"
+        strip "$binpath"
+        du -hs "$binpath"
+        echo "Stripped, compressed"
+        upx "$binpath"
+        du -hs "$binpath"
