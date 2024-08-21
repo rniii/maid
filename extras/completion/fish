@@ -1,9 +1,12 @@
-complete -c maid -n "__fish_is_first_arg" -f
+complete -c maid -e
+complete -c maid -n "__fish_is_first_token" -f
 complete -c maid -a "(maid -l | sed 's/ \(.\)/\t\L\1/')"
 complete -c maid -s h -l help -d "display usage"
 complete -c maid -s l -l list -d "list tasks concisely"
 complete -c maid -s n -l dry-run -d "don't run anything, only display commands"
 complete -c maid -s q -l quiet -d "don't display anything"
-complete -c maid -s f -l taskfile -d "use tasks in file"
+complete -c maid -s f -l taskfile -r -d "use tasks in file"
+complete -c maid -s w -l watch -r -d "watch files in path"
+complete -c maid -s r -l restart -d "restart tasks instead of waiting"
 
 # vim: ft=fish
