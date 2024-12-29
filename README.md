@@ -41,7 +41,7 @@ Of course, you can use maid to run its own tasks!
 Build the executable
 
 ```sh
-cabal build maid
+zig build-exe -OReleaseSafe --strip --name maid -Mroot=src/main.zig
 ```
 ````
 
@@ -76,7 +76,8 @@ Of course, you can use maid to run its own tasks!
 Build the executable
 
 ```sh
-cabal build maid
+zig build-exe -OReleaseFast -fstrip src/main.zig --name maid
+rm maid.o
 ```
 
 ### install
@@ -84,26 +85,17 @@ cabal build maid
 Install project onto `$dstdir`
 
 ```sh
-install -Dm755 "$(cabal list-bin maid)" "$dstdir/bin/maid"
-install -Dm644 LICENSE -t "$dstdir/share/licenses/maid"
-install -Dm644 extras/completion/zsh "$dstdir/share/zsh/site-functions/_maid"
+install -Dm755 maid                   "$dstdir/bin/maid"
+install -Dm644 LICENSE -t             "$dstdir/share/licenses/maid"
+install -Dm644 extras/completion/zsh  "$dstdir/share/zsh/site-functions/_maid"
 install -Dm644 extras/completion/fish "$dstdir/share/fish/vendor_completions.d/maid.fish"
 install -Dm644 extras/completion/bash "$dstdir/share/bash-completion/completions/maid"
-ln -s maid "$dstdir/bin/made"
 ```
 
 ### version
 
 Display the current version
 
-This is used in build scripts
-
-```hs
-import Data.Maybe
-import qualified Data.Text as T
-import qualified Data.Text.IO as I
-
-main = I.readFile "maid-build.cabal"
-  >>= (I.putStrLn . T.strip)
-    . (head . mapMaybe (T.stripPrefix $ T.pack "version:") . T.lines)
+```sh
+git describe --abbrev=0
 ```
