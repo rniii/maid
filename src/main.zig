@@ -12,9 +12,14 @@ pub fn main() !void {
     const tasks = try parser.parse(alloc, stdin.reader());
 
     for (tasks.items) |task| {
-        std.debug.print("{s}\n", .{task.name});
+        std.debug.print("task: {s}\n", .{task.name});
+        std.debug.print("{s}\n", .{task.description});
+        std.debug.print("\n", .{});
+        std.debug.print("code({s}):\n", .{task.code.lang});
+        std.debug.print("{s}\n", .{task.code.text});
+        std.debug.print("\n", .{});
     }
 }
 
 const std = @import("std");
-const Parser = @import("parser.zig");
+const Parser = @import("Parser.zig");
