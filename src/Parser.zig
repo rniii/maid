@@ -1,3 +1,4 @@
+alloc: std.mem.Allocator,
 line: std.ArrayList(u8),
 block: std.ArrayList(u8),
 
@@ -6,19 +7,18 @@ fenceNr: usize = 0,
 lineNr: usize = 0,
 lang: ?Task.Lang = null,
 
-pub fn init(alloc: std.mem.Allocator) !Self {
+pub fn init(alloc: std.mem.Allocator) !Parser {
     const line = try std.ArrayList(u8).initCapacity(alloc, 32);
     const block = try std.ArrayList(u8).initCapacity(alloc, 128);
 
-    return .{ .line = line, .block = block };
+    return .{ .alloc = alloc, .line = line, .block = block };
 }
 
-pub fn parse(self: *Self, alloc: std.mem.Allocator, file: anytype) !std.ArrayList(Task) {
+pub fn parseMarkdown(self: *Parser, file: anytype, tasks: *std.ArrayList(Task)) !void {
+    var task: Task = undefined;
+
     var tasksHeading: usize = 0;
     var state: enum { tasklist, magic, task, desc, code } = .tasklist;
-
-    var tasks = std.ArrayList(Task).init(alloc);
-    var task: Task = undefined;
 
     while (self.nextBlock(file) catch null) |_| sw: switch (state) {
         .tasklist => {
@@ -35,18 +35,17 @@ pub fn parse(self: *Self, alloc: std.mem.Allocator, file: anytype) !std.ArrayLis
             if (self.headingNr <= tasksHeading) break;
 
             state = .desc;
-            task.name = try std.ascii.allocLowerString(alloc, trim(u8, self.block.items[self.headingNr..], " \t"));
+            task.name = try std.ascii.allocLowerString(self.alloc, self.block.items);
         },
         .desc => {
             if (self.headingNr > 0) continue :sw .task;
 
             state = .code;
-            if (self.fenceNr == 0) {
-                task.desc = try alloc.dupe(u8, trim(u8, self.block.items, " \t"));
-            } else {
-                task.desc = try alloc.dupe(u8, "[No description]");
-                continue :sw state;
-            }
+            task.desc = try self.alloc.dupe(u8, if (self.fenceNr == 0)
+                trim(u8, self.block.items, " \t")
+            else
+                "[No description]");
+            continue :sw state;
         },
         .code => {
             if (self.headingNr > 0) continue :sw .task;
@@ -54,17 +53,13 @@ pub fn parse(self: *Self, alloc: std.mem.Allocator, file: anytype) !std.ArrayLis
 
             state = .task;
             task.code.lang = self.lang.?;
-            task.code.text = try alloc.dupe(u8, trim(u8, self.block.items, "\n"));
-            self.nextBlock(file) catch {};
+            task.code.text = try self.alloc.dupe(u8, self.block.items);
             try tasks.append(task);
-            continue :sw state;
         },
     };
-
-    return tasks;
 }
 
-fn nextBlock(self: *Self, file: anytype) !void {
+fn nextBlock(self: *Parser, file: anytype) !void {
     self.block.clearRetainingCapacity();
 
     while (true) {
@@ -76,7 +71,7 @@ fn nextBlock(self: *Self, file: anytype) !void {
     self.fenceNr = fence(self.line.items);
 
     if (self.headingNr > 0) {
-        try self.block.appendSlice(self.line.items);
+        try self.block.appendSlice(trim(u8, self.line.items[self.headingNr..], " \t"));
     } else if (self.fenceNr > 0) {
         self.lang = Task.Lang.fromId(trim(u8, self.line.items[self.fenceNr..], " \t"));
 
@@ -100,14 +95,12 @@ fn nextBlock(self: *Self, file: anytype) !void {
     }
 }
 
-fn nextLine(self: *Self, file: anytype) !void {
+fn nextLine(self: *Parser, file: anytype) !void {
     self.line.clearRetainingCapacity();
-
-    file.streamUntilDelimiter(self.line.writer(), '\n', null) catch |err| {
-        if (self.line.items.len == 0) return err;
-    };
-
     self.lineNr += 1;
+
+    return file.streamUntilDelimiter(self.line.writer(), '\n', null) catch |err|
+        if (self.line.items.len == 0) err;
 }
 
 fn isMagic(text: []u8) bool {
@@ -142,5 +135,5 @@ fn heading(text: []u8) usize {
 
 const std = @import("std");
 const trim = std.mem.trim;
-const Self = @This();
+const Parser = @This();
 const Task = @import("Task.zig");

@@ -41,7 +41,7 @@ Of course, you can use maid to run its own tasks!
 Build the executable
 
 ```sh
-zig build-exe -OReleaseSafe --strip --name maid -Mroot=src/main.zig
+zig build-exe src/main.zig --name maid
 ```
 ````
 
@@ -76,8 +76,7 @@ Of course, you can use maid to run its own tasks!
 Build the executable
 
 ```sh
-zig build-exe -OReleaseFast -fstrip src/main.zig --name maid
-rm maid.o
+zig build-exe src/main.zig --name maid
 ```
 
 ### install

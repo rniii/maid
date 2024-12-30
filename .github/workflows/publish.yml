@@ -36,19 +36,12 @@ jobs:
         choco install upx
     - name: Build
       run: |
-        cabal update
-        cabal configure \
-          --enable-optimization=2 \
-          --enable-static --enable-executable-static \
-          --enable-executable-stripping
-        cabal build
-        echo "binpath=$(cabal list-bin maid)" >> $GITHUB_ENV
+        zig build-exe src/main.zig --name maid
     - name: Publish
       if: runner.os == 'Linux'
       run: |
-        pkg=maid-$("$binpath" -q version)
-        dstdir=$pkg "$binpath" install
-        strip "$pkg/bin/maid"
+        pkg=maid-$(./maid -q version)
+        ./maid install --dstdir=$pkg
         tar --remove-files -cf "$pkg.tar.gz" "$pkg"
 
         gh release upload "$GITHUB_REF_NAME" "$pkg.tar.gz"
@@ -57,7 +50,7 @@ jobs:
     - name: Publish
       if: runner.os == 'Windows'
       run: |
-        exe=maid-$("$binpath" -q version).exe
+        exe=maid-$(./maid.exe -q version).exe
         cp "$binpath" "$exe"
         strip "$exe" && upx "$exe"
         gh release upload "$GITHUB_REF_NAME" "$exe"
