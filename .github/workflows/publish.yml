@@ -26,40 +26,29 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: haskell-actions/setup@v2
+    - uses: mlugg/setup-zig@v1
       with:
-        ghc-version: "9.4.8"
-        cabal-version: "3.10.3.0"
-    - name: Install dependencies
-      if: runner.os == 'Windows'
-      run: |
-        choco install upx
+        version: 0.14.0-dev.2563+af5e73172
+
     - name: Build
-      run: |
-        cabal update
-        cabal configure \
-          --enable-optimization=2 \
-          --enable-static --enable-executable-static \
-          --enable-executable-stripping
-        cabal build
-        echo "binpath=$(cabal list-bin maid)" >> $GITHUB_ENV
+      run: zig build-exe src/main.zig --name maid
+
     - name: Publish
       if: runner.os == 'Linux'
       run: |
-        pkg=maid-$("$binpath" -q version)
-        dstdir=$pkg "$binpath" install
-        strip "$pkg/bin/maid"
-        tar --remove-files -cf "$pkg.tar.gz" "$pkg"
+        pkg=maid-$(./maid -q version).tar.gz
+        ./maid install --dstdir=package
+        tar --remove-files -cf "$pkg" package
 
-        gh release upload "$GITHUB_REF_NAME" "$pkg.tar.gz"
+        gh release upload "$GITHUB_REF_NAME" "$pkg"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Publish
       if: runner.os == 'Windows'
       run: |
-        exe=maid-$("$binpath" -q version).exe
-        cp "$binpath" "$exe"
-        strip "$exe" && upx "$exe"
+        exe=maid-$(./maid.exe -q version).exe
+        cp maid.exe "$exe"
         gh release upload "$GITHUB_REF_NAME" "$exe"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

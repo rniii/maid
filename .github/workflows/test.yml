@@ -24,31 +24,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: haskell-actions/setup@v2
+    - uses: mlugg/setup-zig@v1
       with:
-        ghc-version: "9.4.8"
-        cabal-version: "3.10.3.0"
-    - name: Install dependencies
-      if: runner.os == 'Windows'
-      run: |
-        choco install upx
+        version: 0.14.0-dev.2563+af5e73172
+
     - name: Build
-      run: |
-        cabal update
-        cabal configure \
-          --enable-optimization=2 \
-          --enable-static --enable-executable-static \
-          --enable-executable-stripping
-        cabal build
-        echo "binpath=$(cabal list-bin maid)" >> $GITHUB_ENV
-    - name: Check binary size
-      run: |
-        cp "$binpath" maid
-        strip maid -o maid-s
-        upx maid-s -o maid-u
-        echo "No strip, no compression"
-        du -hs maid
-        echo "Stripped, no compression"
-        du -hs maid-s
-        echo "Stripped, compressed"
-        du -hs maid-u
+      run: zig build-exe src/main.zig --name maid
