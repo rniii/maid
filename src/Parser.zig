@@ -14,7 +14,13 @@ pub fn init(alloc: std.mem.Allocator) !Parser {
     return .{ .alloc = alloc, .line = line, .block = block };
 }
 
-pub fn parseMarkdown(self: *Parser, file: anytype, tasks: *std.ArrayList(Task)) !void {
+pub fn deinit(self: *Parser) void {
+    self.line.deinit();
+    self.block.deinit();
+}
+
+pub fn parseMarkdown(self: *Parser, file: anytype) !std.ArrayList(Task) {
+    var tasks = std.ArrayList(Task).init(self.alloc);
     var task: Task = undefined;
 
     var tasksHeading: usize = 0;
@@ -52,11 +58,13 @@ pub fn parseMarkdown(self: *Parser, file: anytype, tasks: *std.ArrayList(Task)) 
             if (self.fenceNr == 0) continue;
 
             state = .task;
-            task.code.lang = self.lang.?;
+            task.code.lang = self.lang orelse return error.UnknownLanguage;
             task.code.text = try self.alloc.dupe(u8, self.block.items);
             try tasks.append(task);
         },
     };
+
+    return tasks;
 }
 
 fn nextBlock(self: *Parser, file: anytype) !void {
